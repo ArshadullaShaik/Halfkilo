@@ -1,0 +1,48 @@
+No files changed, compilation skipped
+Script ran successfully.
+
+== Logs ==
+  AgentNFT: 0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E
+  PetNFT: 0xc3e53F4d16Ae77Db1c982e75a937B9f60FE63690
+  ItemNFT: 0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB
+  IdentityRegistry: 0x9E545E3C0baAB3E08CdfD552C960A1050f373042
+  ReputationRegistry: 0xa82fF9aFd8f496c3d6ac40E2a0F282E47488CFc9
+  TBA Implementation: 0x1613beB3B2C4f22Ee086B2b38C1476A3cE7f78E8
+  TBARegistry: 0x851356ae760d987E095750cCeb3bC6014560891C
+  GameCore: 0xf5059a5D33d5853360D16C683c16e67980206f36
+  Marketplace: 0x95401dc811bb5740090279Ba06cfA8fcF6113778
+  
+  === Deployment Complete ===
+  Set these in frontend/.env.local:
+  NEXT_PUBLIC_AGENT_NFT= 0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E
+  NEXT_PUBLIC_PET_NFT= 0xc3e53F4d16Ae77Db1c982e75a937B9f60FE63690
+  NEXT_PUBLIC_ITEM_NFT= 0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB
+  NEXT_PUBLIC_IDENTITY_REGISTRY= 0x9E545E3C0baAB3E08CdfD552C960A1050f373042
+  NEXT_PUBLIC_REPUTATION_REGISTRY= 0xa82fF9aFd8f496c3d6ac40E2a0F282E47488CFc9
+  NEXT_PUBLIC_TBA_REGISTRY= 0x851356ae760d987E095750cCeb3bC6014560891C
+  NEXT_PUBLIC_GAME_CORE= 0xf5059a5D33d5853360D16C683c16e67980206f36
+  NEXT_PUBLIC_MARKETPLACE= 0x95401dc811bb5740090279Ba06cfA8fcF6113778
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 31337
+
+Estimated gas price: 1.030545155 gwei
+
+Estimated total gas used for script: 11877907
+
+Estimated amount required: 0.012240719510390585 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /mnt/storage/Half Kilo/broadcast/Deploy.s.sol/31337/run-latest.json
+
+Sensitive values saved to: /mnt/storage/Half Kilo/cache/Deploy.s.sol/31337/run-latest.json
+

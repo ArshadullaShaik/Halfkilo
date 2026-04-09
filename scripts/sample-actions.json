@@ -1,0 +1,39 @@
+{
+    "tokenId": 2,
+    "currentMood": 0,
+    "personality": 1,
+    "actions": [
+        {
+            "type": "attack",
+            "success": true
+        },
+        {
+            "type": "attack",
+            "success": true
+        },
+        {
+            "type": "defend",
+            "success": false
+        },
+        {
+            "type": "attack",
+            "success": true
+        },
+        {
+            "type": "defend",
+            "success": true
+        },
+        {
+            "type": "attack",
+            "success": false
+        },
+        {
+            "type": "attack",
+            "success": true
+        },
+        {
+            "type": "defend",
+            "success": true
+        }
+    ]
+}
