@@ -35,7 +35,9 @@ export default class Fighter {
 
     baseX: number;
     baseY: number;
+    currentFacing: 'left' | 'right';
     private auraPulse = 0;
+    private isJumping = false;
 
     constructor(scene: Phaser.Scene, config: FighterConfig) {
         this.scene = scene;
@@ -51,6 +53,7 @@ export default class Fighter {
         const groundY = (scene.game.config.height as number) * 0.6;
         this.baseX = this.side === 'left' ? centerX - 180 : centerX + 180;
         this.baseY = groundY;
+        this.currentFacing = this.side === 'left' ? 'right' : 'left';
 
         // Shadow on the ground
         this.shadow = scene.add.ellipse(this.baseX, this.baseY + 40, 60, 16, 0x000000, 0.35)
@@ -60,8 +63,7 @@ export default class Fighter {
         this.aura = scene.add.graphics().setDepth(5);
 
         // Character sprite
-        const facing = this.side === 'left' ? 'right' : 'left';
-        this.sprite = scene.physics.add.sprite(this.baseX, this.baseY, this.atlas, `${this.atlas}-${facing}`)
+        this.sprite = scene.physics.add.sprite(this.baseX, this.baseY, this.atlas, `${this.atlas}-${this.currentFacing}`)
             .setDepth(6)
             .setScale(2.2)
             .setImmovable(true);
@@ -94,8 +96,7 @@ export default class Fighter {
 
     playIdle() {
         this.state = 'idle';
-        const facing = this.side === 'left' ? 'right' : 'left';
-        this.sprite.setTexture(this.atlas, `${this.atlas}-${facing}`);
+        this.sprite.setTexture(this.atlas, `${this.atlas}-${this.currentFacing}`);
 
         // Subtle breathing tween
         this.scene.tweens.add({
@@ -109,7 +110,7 @@ export default class Fighter {
     }
 
     move(dx: number, dy: number) {
-        if (this.state !== 'idle') return;
+        if (this.state !== 'idle' || this.isJumping) return;
 
         this.baseX += dx;
         this.baseY += dy;
@@ -124,26 +125,60 @@ export default class Fighter {
         this.sprite.y = this.baseY;
 
         // Play walking animation
-        const facing = this.side === 'left' ? 'right' : 'left';
-        const walkKey = `${this.atlas}-${facing}-walk`;
+        const walkKey = `${this.atlas}-${this.currentFacing}-walk`;
         if (this.scene.anims.exists(walkKey)) {
             this.sprite.anims.play(walkKey, true);
         }
     }
 
     stopMoving() {
-        if (this.state === 'idle') {
+        if (this.state === 'idle' && !this.isJumping) {
             this.sprite.anims.stop();
-            const facing = this.side === 'left' ? 'right' : 'left';
-            this.sprite.setTexture(this.atlas, `${this.atlas}-${facing}`);
+            this.sprite.setTexture(this.atlas, `${this.atlas}-${this.currentFacing}`);
         }
+    }
+
+    faceTarget(targetX: number) {
+        if (this.state !== 'idle' || this.isJumping) return;
+
+        const desiredFacing: 'left' | 'right' = targetX >= this.sprite.x ? 'right' : 'left';
+        if (desiredFacing !== this.currentFacing) {
+            this.currentFacing = desiredFacing;
+            this.sprite.setTexture(this.atlas, `${this.atlas}-${this.currentFacing}`);
+        }
+    }
+
+    jump() {
+        if (this.state !== 'idle' || this.isJumping) return;
+
+        this.isJumping = true;
+        this.scene.tweens.killTweensOf(this.sprite);
+        this.sprite.anims.stop();
+
+        this.sprite.setTexture(this.atlas, `${this.atlas}-${this.currentFacing}`);
+
+        this.scene.tweens.add({
+            targets: this.sprite,
+            y: this.baseY - 80,
+            duration: 220,
+            ease: 'Sine.easeOut',
+            yoyo: true,
+            onStart: () => {
+                this.shadow.setScale(0.75, 0.75).setAlpha(0.22);
+            },
+            onComplete: () => {
+                this.sprite.y = this.baseY;
+                this.shadow.setScale(1, 1).setAlpha(0.35);
+                this.isJumping = false;
+                this.playIdle();
+            }
+        });
     }
 
     playAttack(onComplete?: () => void) {
         this.state = 'attack';
-        const dir = this.side === 'left' ? 1 : -1;
-        const facing = this.side === 'left' ? 'right' : 'left';
-        const walkKey = `${this.atlas}-${facing}-walk`;
+        const dir = this.currentFacing === 'right' ? 1 : -1;
+        const walkKey = `${this.atlas}-${this.currentFacing}-walk`;
 
         // Stop idle tween
         this.scene.tweens.killTweensOf(this.sprite);
@@ -162,7 +197,7 @@ export default class Fighter {
             yoyo: true,
             onComplete: () => {
                 this.sprite.anims.stop();
-                this.sprite.setTexture(this.atlas, `${this.atlas}-${facing}`);
+                this.sprite.setTexture(this.atlas, `${this.atlas}-${this.currentFacing}`);
                 this.playIdle();
                 if (onComplete) onComplete();
             }

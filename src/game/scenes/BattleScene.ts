@@ -24,6 +24,8 @@ export class BattleScene extends Scene {
     // AI Pets & Multiplayer
     private p1Pet!: Phaser.GameObjects.Sprite;
     private p2Pet!: Phaser.GameObjects.Sprite;
+    private p1PetAtlas = 'plato';
+    private p2PetAtlas = 'socrates';
     private p1PetBaseY: number = 0;
     private p2PetBaseY: number = 0;
     private petTimer!: Phaser.Time.TimerEvent;
@@ -47,7 +49,7 @@ export class BattleScene extends Scene {
     }
 
     create() {
-        this.cameras.main.setBackgroundColor(0x0a0e14);
+        this.cameras.main.setBackgroundColor(0x06070b);
 
         this.drawBackground();
         this.drawCRTScreens();
@@ -110,31 +112,31 @@ export class BattleScene extends Scene {
         const W = this.game.config.width as number;
         const H = this.game.config.height as number;
 
-        // Sky gradient (dark blue-green)
+        // Sky gradient (dark cyber twilight)
         for (let y = 0; y < H * 0.35; y++) {
             const t = y / (H * 0.35);
-            const r = Phaser.Math.Linear(8, 15, t);
-            const g = Phaser.Math.Linear(12, 28, t);
-            const b = Phaser.Math.Linear(22, 35, t);
+            const r = Phaser.Math.Linear(8, 24, t);
+            const g = Phaser.Math.Linear(10, 16, t);
+            const b = Phaser.Math.Linear(18, 34, t);
             const color = (Math.floor(r) << 16) | (Math.floor(g) << 8) | Math.floor(b);
             this.bgGfx.fillStyle(color, 1);
             this.bgGfx.fillRect(0, y, W, 1);
         }
 
-        // Garden walls (dark stone)
-        this.bgGfx.fillStyle(0x1a2a1a, 1);
-        this.bgGfx.fillRect(0, H * 0.15, W * 0.12, H * 0.55);
-        this.bgGfx.fillRect(W * 0.88, H * 0.15, W * 0.12, H * 0.55);
+        // Side structures / arena frames
+        this.bgGfx.fillStyle(0x141824, 1);
+        this.bgGfx.fillRect(0, H * 0.12, W * 0.1, H * 0.6);
+        this.bgGfx.fillRect(W * 0.9, H * 0.12, W * 0.1, H * 0.6);
 
-        // Wall top
-        this.bgGfx.fillStyle(0x2a3a2a, 1);
-        this.bgGfx.fillRect(0, H * 0.14, W * 0.15, 8);
-        this.bgGfx.fillRect(W * 0.85, H * 0.14, W * 0.15, 8);
+        // Wall tops / light rails
+        this.bgGfx.fillStyle(0x2a3042, 1);
+        this.bgGfx.fillRect(0, H * 0.14, W * 0.15, 6);
+        this.bgGfx.fillRect(W * 0.85, H * 0.14, W * 0.15, 6);
 
-        // Vine accents on walls
+        // Neon accents on walls
         this.drawVines();
 
-        // Ground paving stones
+        // Ground platform
         this.drawPavingStones();
     }
 
@@ -143,33 +145,33 @@ export class BattleScene extends Scene {
         const H = this.game.config.height as number;
         const vineG = this.add.graphics().setDepth(1);
 
-        // Left wall vine
+        // Left wall light columns
         for (let i = 0; i < 8; i++) {
             const x = W * 0.10 + Math.sin(i * 0.8) * 6;
             const y = H * 0.18 + i * 30;
-            vineG.fillStyle(0x2d6b2d, 0.8);
-            vineG.fillCircle(x, y, 5);
-            vineG.fillStyle(0x3a8a3a, 0.6);
-            vineG.fillCircle(x + 3, y - 2, 3);
+            vineG.fillStyle(0x4ef0d0, 0.75);
+            vineG.fillCircle(x, y, 4);
+            vineG.fillStyle(0x88aaff, 0.5);
+            vineG.fillCircle(x + 3, y - 2, 2);
         }
 
-        // Right wall vine
+        // Right wall light columns
         for (let i = 0; i < 8; i++) {
             const x = W * 0.90 + Math.sin(i * 0.8 + 1) * 6;
             const y = H * 0.20 + i * 28;
-            vineG.fillStyle(0x2d6b2d, 0.8);
-            vineG.fillCircle(x, y, 5);
-            vineG.fillStyle(0x3a8a3a, 0.6);
-            vineG.fillCircle(x - 3, y - 2, 3);
+            vineG.fillStyle(0xe9a84c, 0.75);
+            vineG.fillCircle(x, y, 4);
+            vineG.fillStyle(0xfff0aa, 0.45);
+            vineG.fillCircle(x - 3, y - 2, 2);
         }
 
-        // Lush ground shrubs along edges
+        // Neon floor markers along the edges
         for (let i = 0; i < 12; i++) {
             const x = W * 0.05 + i * (W * 0.09);
             const y = H * 0.72 + Math.sin(i) * 8;
-            vineG.fillStyle(0x1a5a1a, 0.6);
+            vineG.fillStyle(0x23283a, 0.7);
             vineG.fillCircle(x, y, 12 + Math.random() * 6);
-            vineG.fillStyle(0x2a7a2a, 0.4);
+            vineG.fillStyle(0x4ef0d0, 0.12);
             vineG.fillCircle(x + 4, y - 4, 8);
         }
     }
@@ -183,10 +185,10 @@ export class BattleScene extends Scene {
         const groundBot = H * 0.82;
 
         // Base ground color
-        this.bgGfx.fillStyle(0x3a3a44, 1);
+        this.bgGfx.fillStyle(0x202430, 1);
         this.bgGfx.fillRect(0, groundTop, W, groundBot - groundTop);
 
-        // Stone tiles in grid
+        // Metal tiles in grid
         const tileW = 48;
         const tileH = 32;
         for (let row = 0; row < 6; row++) {
@@ -195,20 +197,20 @@ export class BattleScene extends Scene {
                 const x = col * tileW + offset;
                 const y = groundTop + row * tileH;
 
-                // Stone color variation
-                const shade = 0x30 + Math.floor(Math.random() * 0x15);
-                const color = (shade << 16) | (shade << 8) | (shade + 0x08);
+                // Metal color variation
+                const shade = 0x20 + Math.floor(Math.random() * 0x12);
+                const color = (shade << 16) | (shade << 8) | (shade + 0x10);
                 this.bgGfx.fillStyle(color, 1);
                 this.bgGfx.fillRect(x + 1, y + 1, tileW - 2, tileH - 2);
 
                 // Highlight edge
-                this.bgGfx.lineStyle(1, 0x555566, 0.3);
+                this.bgGfx.lineStyle(1, 0x67748f, 0.3);
                 this.bgGfx.strokeRect(x + 1, y + 1, tileW - 2, tileH - 2);
             }
         }
 
         // Wet shine effect
-        this.bgGfx.fillStyle(0x88aacc, 0.06);
+        this.bgGfx.fillStyle(0x4ef0d0, 0.05);
         this.bgGfx.fillRect(0, groundTop, W, groundBot - groundTop);
     }
 
@@ -329,21 +331,51 @@ export class BattleScene extends Scene {
     /* ——— AI Pets & Manual Controls ——— */
 
     private spawnPets() {
-        const p1Atlas = this.battleData?.p1PetAtlas || 'plato';
-        const p2Atlas = this.battleData?.p2PetAtlas || 'socrates';
+        this.p1PetAtlas = this.battleData?.p1PetAtlas || 'plato';
+        this.p2PetAtlas = this.battleData?.p2PetAtlas || 'socrates';
 
-        this.p1Pet = this.add.sprite(this.p1.sprite.x - 60, this.p1.sprite.y - 20, p1Atlas, `${p1Atlas}-right`)
+        this.p1Pet = this.add.sprite(this.p1.sprite.x - 60, this.p1.sprite.y - 20, this.p1PetAtlas, `${this.p1PetAtlas}-right`)
             .setDepth(4).setScale(1.6);
-        this.p2Pet = this.add.sprite(this.p2.sprite.x + 60, this.p2.sprite.y - 20, p2Atlas, `${p2Atlas}-left`)
+        this.p2Pet = this.add.sprite(this.p2.sprite.x + 60, this.p2.sprite.y - 20, this.p2PetAtlas, `${this.p2PetAtlas}-left`)
             .setDepth(4).setScale(1.6);
 
         this.p1PetBaseY = this.p1Pet.y;
         this.p2PetBaseY = this.p2Pet.y;
+
+        this.setPetFacing(this.p1Pet, this.p1PetAtlas, this.p2.sprite.x);
+        this.setPetFacing(this.p2Pet, this.p2PetAtlas, this.p1.sprite.x);
+    }
+
+    private setPetFacing(pet: Phaser.GameObjects.Sprite, atlas: string, targetX: number) {
+        const facing = targetX >= pet.x ? 'right' : 'left';
+        const frame = `${atlas}-${facing}`;
+
+        const texture = this.textures.get(atlas);
+        if (!texture || !texture.has(frame)) return;
+        if (pet.frame && pet.frame.name === frame) return;
+
+        pet.setTexture(atlas, frame);
     }
 
     private setupManualControls() {
         if (!this.input.keyboard) return;
         const mode = this.battleData?.gameMode || 'ai';
+
+        // Always initialize movement keys so polling in update is reliable.
+        this.wasdKeys = this.input.keyboard.addKeys({
+            up: Phaser.Input.Keyboard.KeyCodes.W,
+            down: Phaser.Input.Keyboard.KeyCodes.S,
+            left: Phaser.Input.Keyboard.KeyCodes.A,
+            right: Phaser.Input.Keyboard.KeyCodes.D,
+            jump: Phaser.Input.Keyboard.KeyCodes.SPACE,
+        }) as any;
+        this.input.keyboard.addCapture([
+            Phaser.Input.Keyboard.KeyCodes.W,
+            Phaser.Input.Keyboard.KeyCodes.A,
+            Phaser.Input.Keyboard.KeyCodes.S,
+            Phaser.Input.Keyboard.KeyCodes.D,
+            Phaser.Input.Keyboard.KeyCodes.SPACE,
+        ]);
 
         if (mode === 'online') {
             this.setupOnlineMode();
@@ -641,6 +673,13 @@ export class BattleScene extends Scene {
 
     update(time: number, _delta: number) {
         this.handleMovementInputs();
+
+        // Keep fighters oriented toward each other when they cross positions.
+        if (this.p1 && this.p2) {
+            this.p1.faceTarget(this.p2.sprite.x);
+            this.p2.faceTarget(this.p1.sprite.x);
+        }
+
         this.updatePets(time);
 
         if (this.p1) this.p1.update(time);
@@ -673,20 +712,14 @@ export class BattleScene extends Scene {
 
         this.p1Pet.y = this.p1PetBaseY + floatOffset1;
         this.p2Pet.y = this.p2PetBaseY + floatOffset2;
+
+        // Keep pets facing toward the opposing team even after crossing.
+        this.setPetFacing(this.p1Pet, this.p1PetAtlas, this.p2.sprite.x);
+        this.setPetFacing(this.p2Pet, this.p2PetAtlas, this.p1.sprite.x);
     }
 
     private handleMovementInputs() {
-        if (!this.battleActive || !this.p1 || !this.input.keyboard) return;
-
-        // Ensure keys are initialized
-        if (!this.wasdKeys) {
-            this.wasdKeys = {
-                up: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
-                down: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-                left: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
-                right: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D)
-            };
-        }
+        if (!this.battleActive || !this.p1 || !this.input.keyboard || !this.wasdKeys) return;
 
         const moveSpeed = 4;
         let dx = 0;
@@ -701,6 +734,10 @@ export class BattleScene extends Scene {
             this.p1.move(dx, dy);
         } else {
             this.p1.stopMoving();
+        }
+
+        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.jump)) {
+            this.p1.jump();
         }
 
         // --- Player 2 Movement ---
