@@ -1,12 +1,12 @@
-import { http, createConfig } from "wagmi";
+import { createConfig, http } from "wagmi";
 import { avalancheFuji } from "wagmi/chains";
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { injected } from "wagmi/connectors";
+
 const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "https://api.avax-test.network/ext/bc/C/rpc";
 
-export const config = getDefaultConfig({
-    appName: "Agent Arena",
-    projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "demo",
+export const config = createConfig({
     chains: [avalancheFuji],
+    connectors: [injected()],
     transports: {
         [avalancheFuji.id]: http(rpcUrl),
     },

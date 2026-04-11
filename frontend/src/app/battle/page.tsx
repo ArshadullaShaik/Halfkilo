@@ -5,6 +5,7 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicCl
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { CONTRACTS } from "@/config/contracts";
 import { AgentNFTABI, GameCoreABI } from "@/config/abis";
+import { decodeEventLog } from "viem";
 
 const PLAYER_AGENT_ID = BigInt(1);
 const AI_AGENT_ID = BigInt(2);
@@ -127,6 +128,44 @@ export default function BattlePage() {
             }));
         }
     }, [isBattleSuccess, gameMode, playerAtlas]);
+
+    useEffect(() => {
+        if (!isBattleSuccess || !battleTxHash || !publicClient || !address || typeof window === "undefined") return;
+
+        let active = true;
+
+        const persistLastBattleLoot = async () => {
+            try {
+                const receipt = await publicClient.getTransactionReceipt({ hash: battleTxHash });
+                const battleLog = receipt.logs.find((entry) => entry.address.toLowerCase() === CONTRACTS.gameCore.toLowerCase());
+
+                if (!battleLog) return;
+
+                const decoded = decodeEventLog({
+                    abi: GameCoreABI,
+                    data: battleLog.data,
+                    topics: battleLog.topics,
+                }) as { eventName: string; args?: { lootId?: bigint } };
+
+                if (decoded.eventName !== "BattleResolved") return;
+
+                const lootId = decoded.args?.lootId;
+                if (lootId === undefined) return;
+                if (!active) return;
+
+                window.localStorage.setItem(`lastBattleLootId:${address.toLowerCase()}`, lootId.toString());
+                window.localStorage.setItem(`lastBattleLootAt:${address.toLowerCase()}`, String(Date.now()));
+            } catch {
+                // Ignore receipt decoding failures; battle still completed.
+            }
+        };
+
+        void persistLastBattleLoot();
+
+        return () => {
+            active = false;
+        };
+    }, [isBattleSuccess, battleTxHash, publicClient, address]);
 
     const handleBattle = () => {
         let enemyAgentId = ONLINE_OPPONENT_AGENT_ID;

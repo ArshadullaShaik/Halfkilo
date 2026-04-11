@@ -59,18 +59,26 @@ export default class Character {
     createAnimations() {
         const anims = this.scene.anims;
         const directions = ['left', 'right', 'front', 'back'];
+        const texture = this.scene.textures.get(this.atlas);
+
+        if (!texture) {
+            return;
+        }
 
         directions.forEach(direction => {
             const animKey = `${this.id}-${direction}-walk`;
 
             if (!anims.exists(animKey)) {
+                const frameNames = Array.from({ length: 9 }, (_, i) => `${this.id}-${direction}-walk-${i.toString().padStart(4, '0')}`)
+                    .filter((name) => texture.has(name));
+
+                if (frameNames.length < 2) {
+                    return;
+                }
+
                 anims.create({
                     key: animKey,
-                    frames: anims.generateFrameNames(this.atlas, {
-                        prefix: `${this.id}-${direction}-walk-`,
-                        end: 8,
-                        zeroPad: 4,
-                    }),
+                    frames: frameNames.map((frame) => ({ key: this.atlas, frame })),
                     frameRate: 10,
                     repeat: -1,
                 });
@@ -78,14 +86,27 @@ export default class Character {
         });
     }
 
+    private setSafeIdleFrame(direction: 'left' | 'right' | 'front' | 'back') {
+        const desired = `${this.id}-${direction}`;
+        const texture = this.scene.textures.get(this.atlas);
+        if (texture && texture.has(desired)) {
+            this.sprite.setTexture(this.atlas, desired);
+            return;
+        }
+
+        if (texture && texture.has(this.defaultFrame)) {
+            this.sprite.setTexture(this.atlas, this.defaultFrame);
+        }
+    }
+
     facePlayer(player: Phaser.Physics.Arcade.Sprite) {
         const dx = player.x - this.sprite.x;
         const dy = player.y - this.sprite.y;
 
         if (Math.abs(dx) > Math.abs(dy)) {
-            this.sprite.setTexture(this.atlas, `${this.id}-${dx < 0 ? 'left' : 'right'}`);
+            this.setSafeIdleFrame(dx < 0 ? 'left' : 'right');
         } else {
-            this.sprite.setTexture(this.atlas, `${this.id}-${dy < 0 ? 'back' : 'front'}`);
+            this.setSafeIdleFrame(dy < 0 ? 'back' : 'front');
         }
     }
 
@@ -117,7 +138,7 @@ export default class Character {
             if (this.scene.anims.exists(animKey)) {
                 this.sprite.anims.play(animKey);
             } else {
-                this.sprite.setTexture(this.atlas, `${this.id}-${this.getDirectionFromMovement()}`);
+                this.setSafeIdleFrame(this.getDirectionFromMovement() as 'left' | 'right' | 'front' | 'back');
             }
 
             this.moveDuration = Phaser.Math.Between(500, 1000);
@@ -130,7 +151,7 @@ export default class Character {
             this.sprite.anims.stop();
 
             const direction = ['front', 'back', 'left', 'right'][Math.floor(Math.random() * 4)];
-            this.sprite.setTexture(this.atlas, `${this.id}-${direction}`);
+            this.setSafeIdleFrame(direction as 'left' | 'right' | 'front' | 'back');
 
             this.pauseDuration = Phaser.Math.Between(2000, 6000);
             this.movementTimer = this.scene.time.delayedCall(this.pauseDuration, () => {
@@ -212,7 +233,7 @@ export default class Character {
             if (this.scene.anims.exists(animKey)) {
                 this.sprite.anims.play(animKey);
             } else {
-                this.sprite.setTexture(this.atlas, `${this.id}-${this.getDirectionFromMovement()}`);
+                this.setSafeIdleFrame(this.getDirectionFromMovement() as 'left' | 'right' | 'front' | 'back');
             }
 
             if (this.movementTimer) {

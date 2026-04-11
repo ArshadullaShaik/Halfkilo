@@ -1,469 +1,304 @@
 "use client";
 
-import Link from "next/link";
-import { useState } from "react";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useAccount, useReadContract } from "wagmi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPublicClient, decodeEventLog, http } from "viem";
+import { avalancheFuji } from "viem/chains";
+import { useAccount, useChainId, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { CONTRACTS } from "@/config/contracts";
-import { AgentNFTABI, PetNFTABI } from "@/config/abis";
+import { AgentNFTABI, GameCoreABI } from "@/config/abis";
 
-type CharacterPreset = {
-  id: string;
-  name: string;
-  role: string;
-  motto: string;
-  atlas: string;
-  power: number;
-  tactics: number;
-  mobility: number;
+const PLAYER_AGENT_ID = BigInt(1);
+const AI_FALLBACK_AGENT_ID = BigInt(2);
+const RECEIPT_TIMEOUT_MS = 45_000;
+const FUJI_RECEIPT_RPCS = [
+  process.env.NEXT_PUBLIC_RPC_URL,
+  "https://api.avax-test.network/ext/bc/C/rpc",
+  "https://avalanche-fuji-c-chain-rpc.publicnode.com",
+].filter((url): url is string => !!url);
+const ALLOWED_ATLASES = new Set([
+  "sophia",
+  "socrates",
+  "plato",
+  "aristotle",
+  "descartes",
+  "leibniz",
+  "ada",
+  "turing",
+  "searle",
+  "chomsky",
+  "dennett",
+  "miguel",
+  "paul",
+]);
+
+type NpcChallengePayload = {
+  agentBName: string;
+  p2Atlas: string;
 };
 
-type LoadoutPreset = {
-  id: string;
-  name: string;
-  detail: string;
-  statLabel: string;
-  statValue: string;
-  accentClass?: string;
+type ChallengeStatusPayload = {
+  phase: "engage" | "wallet" | "submitted" | "mining" | "success" | "error";
+  npcName?: string;
+  message?: string;
 };
-
-type ToggleOption = {
-  id: string;
-  label: string;
-  detail: string;
-};
-
-const characterPresets: CharacterPreset[] = [
-  {
-    id: "plato",
-    name: "Plato",
-    role: "Strategist",
-    motto: "Hold the center, win the fight.",
-    atlas: "/assets/characters/plato/atlas.png",
-    power: 92,
-    tactics: 98,
-    mobility: 58,
-  },
-  {
-    id: "turing",
-    name: "Turing",
-    role: "Tech Duelist",
-    motto: "Reads the room before the strike.",
-    atlas: "/assets/characters/turing/atlas.png",
-    power: 84,
-    tactics: 91,
-    mobility: 74,
-  },
-  {
-    id: "ada",
-    name: "Ada",
-    role: "Field Engineer",
-    motto: "Build fast. Adapt faster.",
-    atlas: "/assets/characters/ada/atlas.png",
-    power: 78,
-    tactics: 86,
-    mobility: 82,
-  },
-  {
-    id: "socrates",
-    name: "Socrates",
-    role: "Frontline Mentor",
-    motto: "Counter, answer, advance.",
-    atlas: "/assets/characters/socrates/atlas.png",
-    power: 90,
-    tactics: 81,
-    mobility: 63,
-  },
-  {
-    id: "descartes",
-    name: "Descartes",
-    role: "Precision Sniper",
-    motto: "Calm aim, clear outcome.",
-    atlas: "/assets/characters/descartes/atlas.png",
-    power: 88,
-    tactics: 77,
-    mobility: 69,
-  },
-  {
-    id: "leibniz",
-    name: "Leibniz",
-    role: "Support Analyst",
-    motto: "Stacks advantages before the rush.",
-    atlas: "/assets/characters/leibniz/atlas.png",
-    power: 73,
-    tactics: 95,
-    mobility: 66,
-  },
-];
-
-const gunPresets: LoadoutPreset[] = [
-  {
-    id: "pulse-rifle",
-    name: "Pulse Rifle",
-    detail: "Balanced beam for steady pressure and safe mid-range control.",
-    statLabel: "Damage",
-    statValue: "82",
-    accentClass: "rarity-rare",
-  },
-  {
-    id: "ion-shotgun",
-    name: "Ion Shotgun",
-    detail: "Close-range burst for aggressive lane breaks and fast finishes.",
-    statLabel: "Burst",
-    statValue: "96",
-    accentClass: "rarity-legendary",
-  },
-  {
-    id: "rail-pistol",
-    name: "Rail Pistol",
-    detail: "Fast swap sidearm with a clean crit window for sharp timing.",
-    statLabel: "Speed",
-    statValue: "88",
-    accentClass: "rarity-uncommon",
-  },
-  {
-    id: "arc-launcher",
-    name: "Arc Launcher",
-    detail: "Arc-shot utility for crowd pressure and tactical disruption.",
-    statLabel: "Control",
-    statValue: "91",
-    accentClass: "rarity-epic",
-  },
-];
-
-const outfitPresets: LoadoutPreset[] = [
-  {
-    id: "urban-void",
-    name: "Urban Void",
-    detail: "Lightweight suit with a clean silhouette and stealth-minded trim.",
-    statLabel: "Armor",
-    statValue: "67",
-    accentClass: "rarity-common",
-  },
-  {
-    id: "gold-breach",
-    name: "Gold Breach",
-    detail: "Command coat with reinforced shoulders and bold arena presence.",
-    statLabel: "Armor",
-    statValue: "88",
-    accentClass: "rarity-legendary",
-  },
-  {
-    id: "field-operant",
-    name: "Field Operant",
-    detail: "Practical kit that keeps movement light while staying battle ready.",
-    statLabel: "Agility",
-    statValue: "93",
-    accentClass: "rarity-rare",
-  },
-  {
-    id: "spectrum-core",
-    name: "Spectrum Core",
-    detail: "High-tech armor with animated trim for a strong identity read.",
-    statLabel: "Style",
-    statValue: "97",
-    accentClass: "rarity-epic",
-  },
-];
-
-const toggleOptions: ToggleOption[] = [
-  {
-    id: "pet-assist",
-    label: "Pet assist",
-    detail: "Keep your companion visible in combat previews.",
-  },
-  {
-    id: "quick-swap",
-    label: "Quick swap",
-    detail: "Switch weapons with reduced animation delay.",
-  },
-  {
-    id: "helmet-on",
-    label: "Helmet on",
-    detail: "Show the full combat helm during the loadout screen.",
-  },
-  {
-    id: "loot-focus",
-    label: "Loot focus",
-    detail: "Prioritize item drops and inventory alerts after battle.",
-  },
-];
-
-const navLinks = [
-  { label: "BATTLE", href: "/battle" },
-  { label: "REGISTER", href: "/register" },
-  { label: "INVENTORY", href: "/inventory" },
-  { label: "MARKET", href: "/marketplace" },
-];
 
 export default function HomePage() {
-  const { isConnected, address } = useAccount();
-  const [selectedCharacter, setSelectedCharacter] = useState(characterPresets[0].id);
-  const [selectedGun, setSelectedGun] = useState(gunPresets[0].id);
-  const [selectedOutfit, setSelectedOutfit] = useState(outfitPresets[0].id);
-  const [activeOptions, setActiveOptions] = useState<string[]>(["pet-assist", "quick-swap"]);
+  const { address } = useAccount();
+  const chainId = useChainId();
+  const publicClient = usePublicClient();
+  const [pendingNpcChallenge, setPendingNpcChallenge] = useState<NpcChallengePayload | null>(null);
+  const [cachedEnemyAgentId, setCachedEnemyAgentId] = useState<bigint | null>(null);
 
-  const { data: agentCount } = useReadContract({
-    address: CONTRACTS.agentNFT,
-    abi: AgentNFTABI,
-    functionName: "totalSupply",
-    query: { enabled: !!CONTRACTS.agentNFT },
+  const { writeContractAsync: doBattleAsync, isPending: isBattlePending } = useWriteContract();
+  const { data: characterOfData } = useReadContract({
+    address: CONTRACTS.gameCore,
+    abi: GameCoreABI,
+    functionName: "characterOf",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address && !!CONTRACTS.gameCore },
   });
 
-  const { data: petCount } = useReadContract({
-    address: CONTRACTS.petNFT,
-    abi: PetNFTABI,
-    functionName: "totalSupply",
-    query: { enabled: !!CONTRACTS.petNFT },
-  });
+  const activePlayerAgentId = useMemo(() => {
+    const resolved = characterOfData as bigint | undefined;
+    return resolved && resolved > BigInt(0) ? resolved : PLAYER_AGENT_ID;
+  }, [characterOfData]);
 
-  const currentCharacter =
-    characterPresets.find((character) => character.id === selectedCharacter) ?? characterPresets[0];
-  const currentGun = gunPresets.find((gun) => gun.id === selectedGun) ?? gunPresets[0];
-  const currentOutfit =
-    outfitPresets.find((outfit) => outfit.id === selectedOutfit) ?? outfitPresets[0];
-
-  const toggleOption = (optionId: string) => {
-    setActiveOptions((current) =>
-      current.includes(optionId) ? current.filter((entry) => entry !== optionId) : [...current, optionId],
-    );
+  const emitChallengeStatus = (payload: ChallengeStatusPayload) => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent("CHALLENGE_STATUS", { detail: payload }));
   };
 
-  return (
-    <div className="lobby-screen">
-      <div className="lobby-shell">
-        <header className="lobby-topbar pixel-panel">
-          <div className="lobby-brand">
-            <div className="lobby-brand__icon">
-              <img src="/assets/logo.png" alt="Agent Arena" />
-            </div>
-            <div>
-              <p className="lobby-brand__eyebrow">BASE COMMAND</p>
-              <h1>Agent Arena</h1>
-            </div>
-          </div>
+  const waitForReceiptWithFallback = useCallback(async (hash: `0x${string}`) => {
+    try {
+      return await publicClient!.waitForTransactionReceipt({
+        hash,
+        confirmations: 1,
+        timeout: RECEIPT_TIMEOUT_MS,
+      });
+    } catch {
+      // Fall through to alternate RPCs when the configured transport is stale.
+    }
 
-          <div className="lobby-topbar__stats">
-            <span className={`status-chip ${isConnected ? "status-chip--online" : "status-chip--offline"}`}>
-              {isConnected ? "ONLINE" : "OFFLINE"}
-            </span>
-            <span className="status-chip status-chip--gold">AGENTS: {agentCount?.toString() || "0"}</span>
-            <span className="status-chip status-chip--teal">PETS: {petCount?.toString() || "0"}</span>
-            <span className="status-chip status-chip--dim">
-              {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "WALLET STANDBY"}
-            </span>
-          </div>
+    for (const rpcUrl of FUJI_RECEIPT_RPCS) {
+      try {
+        const fallbackClient = createPublicClient({
+          chain: avalancheFuji,
+          transport: http(rpcUrl),
+        });
 
-          <div className="lobby-topbar__wallet">
-            <ConnectButton showBalance={false} chainStatus="none" accountStatus="avatar" />
-          </div>
-        </header>
+        return await fallbackClient.waitForTransactionReceipt({
+          hash,
+          confirmations: 1,
+          timeout: RECEIPT_TIMEOUT_MS,
+        });
+      } catch {
+        // Try next fallback endpoint.
+      }
+    }
 
-        <main className="lobby-grid">
-          <aside className="lobby-nav pixel-panel">
-            <div className="lobby-nav__hero">
-              <p className="lobby-nav__eyebrow">TACTICAL MENU</p>
-              <h2>Navigate the base</h2>
-              <p>
-                Build your loadout, manage inventory, and enter the arena from one control room.
-              </p>
-            </div>
+    throw new Error("Confirmation lookup timed out. Transaction may be confirmed; refresh to sync state.");
+  }, [publicClient]);
 
-            <div className="lobby-nav__links">
-              {navLinks.map((link) => (
-                <Link key={link.href} href={link.href} className="lobby-nav__link">
-                  <span>{link.label}</span>
-                  <strong>ENTER</strong>
-                </Link>
-              ))}
-            </div>
+  useEffect(() => {
+    if (!address || typeof window === "undefined") return;
 
-            <div className="lobby-nav__panel pixel-panel-inset">
-              <span className="section-label">SYSTEM</span>
-              <p>Deploy from the battle lobby. Character selection, weapons, outfits, and battle options are all staged here.</p>
-            </div>
-          </aside>
+    const rawAtlas = window.localStorage.getItem(`recruitAtlasByWallet:${address.toLowerCase()}`) || "sophia";
+    const savedAtlas = ALLOWED_ATLASES.has(rawAtlas) ? rawAtlas : "sophia";
+    window.localStorage.setItem("activeRecruitAtlas", savedAtlas);
+  }, [address]);
 
-          <section className="lobby-stage pixel-panel">
-            <div className="lobby-stage__top">
-              <div>
-                <p className="section-label">SELECTED CHARACTER</p>
-                <h2>{currentCharacter.name}</h2>
-              </div>
-              <span className={`rarity-badge ${currentCharacter.power >= 90 ? "rarity-legendary" : "rarity-rare"}`}>
-                {currentCharacter.role}
-              </span>
-            </div>
+  useEffect(() => {
+    if (!publicClient || !CONTRACTS.agentNFT || !CONTRACTS.gameCore || typeof window === "undefined") return;
 
-            <div className="lobby-stage__arena">
-              <div className="lobby-stage__portrait">
-                <img src={currentCharacter.atlas} alt={currentCharacter.name} className="lobby-stage__art" />
-              </div>
+    let active = true;
 
-              <div className="lobby-stage__metrics">
-                <div className="lobby-stat">
-                  <span>POWER</span>
-                  <strong>{currentCharacter.power}</strong>
-                </div>
-                <div className="lobby-stat">
-                  <span>TACTICS</span>
-                  <strong>{currentCharacter.tactics}</strong>
-                </div>
-                <div className="lobby-stat">
-                  <span>MOBILITY</span>
-                  <strong>{currentCharacter.mobility}</strong>
-                </div>
-              </div>
+    const warmEnemyAgentCache = async () => {
+      try {
+        const fromStorage = window.localStorage.getItem("cachedBaseEnemyAgentId");
+        if (fromStorage && /^\d+$/.test(fromStorage)) {
+          const parsed = BigInt(fromStorage);
+          const isRegistered = await publicClient.readContract({
+            address: CONTRACTS.gameCore,
+            abi: GameCoreABI,
+            functionName: "registered",
+            args: [parsed],
+          });
 
-              <div className="lobby-stage__quote pixel-panel-inset">
-                <p>{currentCharacter.motto}</p>
-              </div>
-            </div>
+          if (isRegistered && parsed !== activePlayerAgentId) {
+            if (!active) return;
+            setCachedEnemyAgentId(parsed);
+            return;
+          }
+        }
 
-            <div className="lobby-roster">
-              {characterPresets.map((character) => {
-                const isActive = selectedCharacter === character.id;
+        const latestAgentId = await publicClient.readContract({
+          address: CONTRACTS.agentNFT,
+          abi: AgentNFTABI,
+          functionName: "totalSupply",
+        });
 
-                return (
-                  <button
-                    key={character.id}
-                    type="button"
-                    className={`lobby-card ${isActive ? "active" : ""}`}
-                    onClick={() => setSelectedCharacter(character.id)}
-                    aria-pressed={isActive}
-                  >
-                    <img src={character.atlas} alt={character.name} className="lobby-card__art" />
-                    <div className="lobby-card__copy">
-                      <span>{character.role}</span>
-                      <strong>{character.name}</strong>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+        let probeId = latestAgentId;
+        while (probeId > BigInt(0)) {
+          const isRegistered = await publicClient.readContract({
+            address: CONTRACTS.gameCore,
+            abi: GameCoreABI,
+            functionName: "registered",
+            args: [probeId],
+          });
 
-          <aside className="lobby-loadout">
-            <article className="pixel-panel lobby-module">
-              <div className="section-header">
-                <div>
-                  <p className="section-label">WEAPON</p>
-                  <h2>{currentGun.name}</h2>
-                </div>
-                <span className={`rarity-badge ${currentGun.accentClass || "rarity-common"}`}>{currentGun.statLabel}</span>
-              </div>
+          if (isRegistered && probeId !== activePlayerAgentId) {
+            if (!active) return;
+            setCachedEnemyAgentId(probeId);
+            window.localStorage.setItem("cachedBaseEnemyAgentId", probeId.toString());
+            return;
+          }
 
-              <div className="lobby-weapon">
-                <div className="lobby-weapon__track">
-                  {gunPresets.map((gun) => {
-                    const isActive = selectedGun === gun.id;
-                    return (
-                      <button
-                        key={gun.id}
-                        type="button"
-                        className={`lobby-track-card ${isActive ? "active" : ""}`}
-                        onClick={() => setSelectedGun(gun.id)}
-                        aria-pressed={isActive}
-                      >
-                        <span>{gun.statLabel}</span>
-                        <strong>{gun.name}</strong>
-                        <p>{gun.statValue}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="lobby-weapon__detail pixel-panel-inset">
-                  <p>{currentGun.detail}</p>
-                  <div className="lobby-weapon__meta">
-                    <span>{currentGun.statLabel}</span>
-                    <strong>{currentGun.statValue}</strong>
-                  </div>
-                </div>
-              </div>
-            </article>
+          probeId -= BigInt(1);
+        }
 
-            <article className="pixel-panel lobby-module">
-              <div className="section-header">
-                <div>
-                  <p className="section-label">OUTFITS</p>
-                  <h2>{currentOutfit.name}</h2>
-                </div>
-                <span className={`rarity-badge ${currentOutfit.accentClass || "rarity-common"}`}>{currentOutfit.statLabel}</span>
-              </div>
+        if (!active) return;
+        setCachedEnemyAgentId(AI_FALLBACK_AGENT_ID);
+      } catch {
+        if (!active) return;
+        setCachedEnemyAgentId(AI_FALLBACK_AGENT_ID);
+      }
+    };
 
-              <div className="lobby-outfit-grid">
-                {outfitPresets.map((outfit) => {
-                  const isActive = selectedOutfit === outfit.id;
-                  return (
-                    <button
-                      key={outfit.id}
-                      type="button"
-                      className={`lobby-outfit-card ${isActive ? "active" : ""}`}
-                      onClick={() => setSelectedOutfit(outfit.id)}
-                      aria-pressed={isActive}
-                    >
-                      <strong>{outfit.name}</strong>
-                      <span>{outfit.statLabel}</span>
-                      <p>{outfit.statValue}</p>
-                    </button>
-                  );
-                })}
-              </div>
+    void warmEnemyAgentCache();
+    return () => {
+      active = false;
+    };
+  }, [publicClient, activePlayerAgentId]);
 
-              <div className="pixel-panel-inset lobby-note">
-                <p>{currentOutfit.detail}</p>
-              </div>
-            </article>
+  useEffect(() => {
+    const onChallengeNpc = (evt: Event) => {
+      const event = evt as CustomEvent<NpcChallengePayload>;
+      const detail = event.detail;
+      if (!detail?.agentBName || !detail?.p2Atlas) return;
+      setPendingNpcChallenge(detail);
+      emitChallengeStatus({ phase: "engage", npcName: detail.agentBName });
+    };
 
-            <article className="pixel-panel lobby-module">
-              <div className="section-header">
-                <div>
-                  <p className="section-label">OPTIONS</p>
-                  <h2>Battle preferences</h2>
-                </div>
-                <span className="section-help">Toggle your preferred run behavior.</span>
-              </div>
+    window.addEventListener("CHALLENGE_NPC", onChallengeNpc as EventListener);
+    return () => window.removeEventListener("CHALLENGE_NPC", onChallengeNpc as EventListener);
+  }, []);
 
-              <div className="lobby-options">
-                {toggleOptions.map((option) => {
-                  const isActive = activeOptions.includes(option.id);
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      className={`lobby-option ${isActive ? "active" : ""}`}
-                      onClick={() => toggleOption(option.id)}
-                      aria-pressed={isActive}
-                    >
-                      <strong>{option.label}</strong>
-                      <span>{option.detail}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </article>
-          </aside>
-        </main>
+  useEffect(() => {
+    if (!pendingNpcChallenge) return;
 
-        <footer className="lobby-footer pixel-panel">
-          <div>
-            <p className="section-label">READY STATE</p>
-            <h2>Loadout locked. Deploy when you are ready.</h2>
-            <p>
-              Select a fighter, choose your weapon and outfit, then launch the arena.
-            </p>
-          </div>
+    const challengeDetail = pendingNpcChallenge;
+    const enemyAgentId = cachedEnemyAgentId ?? AI_FALLBACK_AGENT_ID;
+    setPendingNpcChallenge(null);
 
-          <div className="lobby-footer__actions">
-            <Link href="/battle" className="pixel-btn warm lobby-start-btn">
-              START BATTLE
-            </Link>
-            <Link href="/register" className="pixel-btn">
-              REGISTER
-            </Link>
-          </div>
-        </footer>
-      </div>
-    </div>
-  );
+    // --- Always launch the BattleScene immediately ---
+    const playerAtlas =
+      typeof window !== "undefined"
+        ? (window.localStorage.getItem(
+          address ? `recruitAtlasByWallet:${address.toLowerCase()}` : "activeRecruitAtlas"
+        ) ||
+          window.localStorage.getItem("activeRecruitAtlas") ||
+          "sophia")
+        : "sophia";
+
+    const battleDetail = {
+      agentAName: "You",
+      petAName: "Your Pet",
+      agentBName: challengeDetail.agentBName,
+      petBName: `${challengeDetail.agentBName} Pet`,
+      p1Atlas: playerAtlas,
+      p2Atlas: challengeDetail.p2Atlas,
+      winnerIsA: true,
+      gameMode: "ai",
+    };
+
+    console.log("[Challenge Flow] Launching BattleScene immediately:", battleDetail);
+    window.dispatchEvent(new CustomEvent("START_BATTLE_SCENE", { detail: battleDetail }));
+
+    // --- Attempt on-chain tx in the background (requires wallet + correct network) ---
+    if (!address) {
+      emitChallengeStatus({ phase: "error", message: "Wallet not connected — running in demo mode." });
+      return;
+    }
+
+    if (chainId !== 43113) {
+      emitChallengeStatus({ phase: "error", message: "Switch to Avalanche Fuji (43113) for on-chain battle." });
+      return;
+    }
+
+    if (!CONTRACTS.gameCore || !publicClient || isBattlePending) {
+      // Contracts not configured or tx already in flight — scene is already launched, nothing more to do.
+      return;
+    }
+
+    emitChallengeStatus({ phase: "wallet", npcName: challengeDetail.agentBName });
+
+    let active = true;
+
+    const executeChallenge = async () => {
+      try {
+        const hash = await doBattleAsync({
+          address: CONTRACTS.gameCore,
+          abi: GameCoreABI,
+          functionName: "battle",
+          account: address,
+          chainId: 43113,
+          gas: BigInt(700000),
+          args: [activePlayerAgentId, enemyAgentId],
+        });
+
+        if (!active) return;
+        emitChallengeStatus({ phase: "submitted", npcName: challengeDetail.agentBName });
+        emitChallengeStatus({ phase: "mining", npcName: challengeDetail.agentBName });
+
+        const receipt = await waitForReceiptWithFallback(hash);
+        if (!active) return;
+
+        if (receipt.status !== "success") {
+          emitChallengeStatus({ phase: "error", message: "On-chain transaction failed." });
+          return;
+        }
+
+        emitChallengeStatus({ phase: "success", npcName: challengeDetail.agentBName });
+
+        // Persist loot data from BattleResolved event
+        const battleLog = receipt.logs.find(
+          (entry) => entry.address.toLowerCase() === CONTRACTS.gameCore.toLowerCase()
+        );
+        if (battleLog) {
+          try {
+            const decoded = decodeEventLog({
+              abi: GameCoreABI,
+              data: battleLog.data,
+              topics: battleLog.topics,
+            }) as { eventName: string; args?: { winner?: bigint; lootId?: bigint } };
+
+            if (decoded.eventName === "BattleResolved") {
+              const lootId = decoded.args?.lootId;
+              if (lootId !== undefined) {
+                window.localStorage.setItem(`lastBattleLootId:${address.toLowerCase()}`, lootId.toString());
+                window.localStorage.setItem(`lastBattleLootAt:${address.toLowerCase()}`, String(Date.now()));
+              }
+            }
+          } catch {
+            // Parsing failures are non-critical.
+          }
+        }
+      } catch (err) {
+        if (!active) return;
+        const msg =
+          (err as { shortMessage?: string; message?: string })?.shortMessage ||
+          (err as { message?: string })?.message ||
+          "On-chain battle call failed.";
+        emitChallengeStatus({ phase: "error", message: msg });
+      }
+    };
+
+    void executeChallenge();
+
+    return () => {
+      active = false;
+    };
+  }, [pendingNpcChallenge, isBattlePending, cachedEnemyAgentId, activePlayerAgentId, doBattleAsync, address, chainId, publicClient, waitForReceiptWithFallback]);
+
+  return null;
 }

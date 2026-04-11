@@ -11,8 +11,8 @@ const DynamicGameCanvas = dynamic(
 export default function GlobalCanvas() {
     const pathname = usePathname();
 
-    // Render Phaser only on the battle route.
-    if (pathname !== '/battle') {
+    // Render Phaser on base map and battle route.
+    if (pathname !== '/' && pathname !== '/battle') {
         return null;
     }
 

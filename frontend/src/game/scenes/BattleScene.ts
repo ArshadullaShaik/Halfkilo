@@ -94,15 +94,8 @@ export class BattleScene extends Scene {
             this.cleanupAndReturn();
         });
 
-        // Listen for external START_BATTLE events
-        const handleBattle = (e: CustomEvent) => {
-            this.battleData = e.detail;
-            this.scene.restart(e.detail);
-        };
-        window.addEventListener('START_BATTLE_SCENE', handleBattle as EventListener);
-        this.events.on(Phaser.Scenes.Events.DESTROY, () => {
-            window.removeEventListener('START_BATTLE_SCENE', handleBattle as EventListener);
-        });
+        // NOTE: START_BATTLE_SCENE is handled by Game.ts which does scene.start('BattleScene').
+        // No listener here — adding one causes an infinite restart loop.
     }
 
     /* ——— Background Rendering ——— */
@@ -393,22 +386,117 @@ export class BattleScene extends Scene {
         }
     }
 
-    private setupAIMode() {
-        // Player 1 controls
-        this.input.keyboard!.on('keydown-F', () => this.executeAction(this.p1, this.p2, 'attack', 'left'));
-        this.input.keyboard!.on('keydown-G', () => this.executeAction(this.p1, this.p2, 'block', 'left'));
-        this.input.keyboard!.on('keydown-H', () => this.executeAction(this.p1, this.p2, 'dodge', 'left'));
+    // Player behavior tracking for AI decisions
+    private playerActionCount = 0;
+    private playerMoveCount = 0;
+    private lastPlayerAction = '';
+    private aiRound = 0;
+    private aiBusy = false;
 
-        // simple CPU for P2
+    private setupAIMode() {
+        // Player 1 controls — track actions for AI behavior analysis
+        this.input.keyboard!.on('keydown-F', () => {
+            this.playerActionCount++;
+            this.lastPlayerAction = 'attack';
+            this.executeAction(this.p1, this.p2, 'attack', 'left');
+        });
+        this.input.keyboard!.on('keydown-G', () => {
+            this.playerActionCount++;
+            this.lastPlayerAction = 'block';
+            this.executeAction(this.p1, this.p2, 'block', 'left');
+        });
+        this.input.keyboard!.on('keydown-H', () => {
+            this.playerActionCount++;
+            this.lastPlayerAction = 'dodge';
+            this.executeAction(this.p1, this.p2, 'dodge', 'left');
+        });
+
+        // Mastra AI — opponent decision loop
         this.cpuTimer = this.time.addEvent({
-            delay: 1500,
+            delay: 1800,
             callback: () => {
-                if (!this.battleActive) return;
-                const actions = ['attack', 'block', 'dodge'] as const;
-                const act = actions[Math.floor(Math.random() * 3)];
-                this.executeAction(this.p2, this.p1, act, 'right');
+                if (!this.battleActive || this.aiBusy) return;
+                this.requestAIDecision('opponent');
             },
             loop: true
+        });
+    }
+
+    private async requestAIDecision(role: 'opponent' | 'opponentPet' | 'playerPet') {
+        this.aiBusy = true;
+        this.aiRound++;
+
+        // Classify player behavior based on tracking
+        let playerBehavior = 'calm';
+        if (this.playerMoveCount > 15) playerBehavior = 'erratic';
+        else if (this.playerActionCount > 5) playerBehavior = 'aggressive';
+        else if (this.playerActionCount === 0) playerBehavior = 'idle';
+
+        // Reset counters each round
+        this.playerActionCount = 0;
+        this.playerMoveCount = 0;
+
+        const npcId = this.battleData?.p2Atlas || 'aristotle';
+        const p2HealthPct = Math.round((this.p2.health / this.p2.maxHealth) * 100);
+        const p1HealthPct = Math.round((this.p1.health / this.p1.maxHealth) * 100);
+
+        let decision: { action: string; speed: string; style: string; taunt?: string };
+        try {
+            const res = await fetch('/api/npc/battle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    npcId,
+                    role,
+                    playerBehavior,
+                    health: p2HealthPct,
+                    opponentHealth: p1HealthPct,
+                    round: this.aiRound,
+                }),
+            });
+            decision = await res.json();
+        } catch {
+            // Fallback: random action
+            const actions = ['attack', 'block', 'dodge'] as const;
+            decision = { action: actions[Math.floor(Math.random() * 3)], speed: 'normal', style: 'reactive' };
+        }
+
+        if (!this.battleActive) { this.aiBusy = false; return; }
+
+        // Apply speed — fast=immediate, normal=small delay, slow=big delay
+        const delayMs = decision.speed === 'fast' ? 100 : decision.speed === 'slow' ? 800 : 400;
+
+        this.time.delayedCall(delayMs, () => {
+            if (!this.battleActive) { this.aiBusy = false; return; }
+            const act = (['attack', 'block', 'dodge'].includes(decision.action) ? decision.action : 'attack') as 'attack' | 'block' | 'dodge';
+            this.executeAction(this.p2, this.p1, act, 'right');
+
+            // Show taunt if present
+            if (decision.taunt) {
+                this.showTaunt(this.p2.sprite.x, this.p2.sprite.y - 50, decision.taunt);
+            }
+
+            this.aiBusy = false;
+        });
+    }
+
+    private showTaunt(x: number, y: number, text: string) {
+        const tauntText = this.add.text(x, y, text, {
+            fontFamily: '"Press Start 2P", Courier, monospace',
+            fontSize: '9px',
+            color: '#FFD700',
+            stroke: '#000000',
+            strokeThickness: 3,
+            wordWrap: { width: 180 },
+        }).setOrigin(0.5).setDepth(55);
+
+        this.tweens.add({
+            targets: tauntText,
+            y: y - 30,
+            alpha: 0,
+            duration: 2000,
+            ease: 'Power1',
+            onComplete: () => tauntText.destroy()
         });
     }
 
@@ -732,6 +820,7 @@ export class BattleScene extends Scene {
 
         if (dx !== 0 || dy !== 0) {
             this.p1.move(dx, dy);
+            this.playerMoveCount++;
         } else {
             this.p1.stopMoving();
         }

@@ -15,6 +15,63 @@ export class Game extends Scene {
     dialogueManager!: DialogueManager;
     philosophers: Character[] = [];
     labelsVisible = true;
+    challengeKey!: Phaser.Input.Keyboard.Key;
+    interactionHint!: Phaser.GameObjects.Text;
+    playerAtlas = 'sophia';
+    challengeOverlayLocked = false;
+    challengeOverlayTimer: Phaser.Time.TimerEvent | null = null;
+    challengeOverlayMessages: string[] = [];
+    challengeOverlayIndex = 0;
+    playerWalkAnimByDirection: Record<'left' | 'right' | 'front' | 'back', string> = {
+        left: 'sophia-left-walk',
+        right: 'sophia-right-walk',
+        front: 'sophia-front-walk',
+        back: 'sophia-back-walk',
+    };
+
+    private resolvePlayerAtlas(candidate?: string | null) {
+        const fallback = 'sophia';
+        if (!candidate) return fallback;
+        return this.textures.exists(candidate) ? candidate : fallback;
+    }
+
+    private safePlayerFrame(direction: 'left' | 'right' | 'front' | 'back') {
+        const preferred = `${this.playerAtlas}-${direction}`;
+        const fallback = `sophia-${direction}`;
+        if (this.textures.exists(this.playerAtlas) && this.textures.getFrame(this.playerAtlas, preferred)) {
+            return { atlas: this.playerAtlas, frame: preferred };
+        }
+        return { atlas: 'sophia', frame: fallback };
+    }
+
+    private resolveWalkAnimation(direction: 'left' | 'right' | 'front' | 'back') {
+        const preferred = `${this.playerAtlas}-${direction}-walk`;
+        if (this.anims.exists(preferred)) {
+            const preferredAnim = this.anims.get(preferred);
+            if (preferredAnim && preferredAnim.frames && preferredAnim.frames.length > 1) {
+                return preferred;
+            }
+        }
+
+        const fallback = `sophia-${direction}-walk`;
+        if (this.anims.exists(fallback)) {
+            return fallback;
+        }
+
+        return fallback;
+    }
+
+    private playPlayerWalk(direction: 'left' | 'right' | 'front' | 'back') {
+        const animKey = this.resolveWalkAnimation(direction);
+        if (this.anims.exists(animKey)) {
+            this.player!.anims.play(animKey, true);
+            return;
+        }
+
+        // Fallback if no walk animation is available for the active atlas.
+        const frame = this.safePlayerFrame(direction);
+        this.player!.setTexture(frame.atlas, frame.frame);
+    }
 
     // Auto-battler state
     fighters: Character[] = [];
@@ -31,7 +88,12 @@ export class Game extends Scene {
         let screenPadding = 20;
         let maxDialogueHeight = 200;
 
-        // this.createPhilosophers(map, layers);
+        if (typeof window !== 'undefined') {
+            const savedAtlas = window.localStorage.getItem('activeRecruitAtlas');
+            this.playerAtlas = this.resolvePlayerAtlas(savedAtlas);
+        }
+
+        this.createPhilosophers(map, layers);
 
         this.setupPlayer(map, layers.worldLayer!);
         const camera = this.setupCamera(map);
@@ -55,6 +117,17 @@ export class Game extends Scene {
             .setVisible(false);
 
         this.spaceKey = this.input.keyboard!.addKey('SPACE');
+        this.challengeKey = this.input.keyboard!.addKey('C');
+        this.interactionHint = this.add
+            .text(20, 72, 'Walk to an NPC. Press SPACE to talk | Press C to challenge', {
+                font: '16px monospace',
+                color: '#8cecff',
+                backgroundColor: '#0a1420',
+                padding: { x: 10, y: 6 },
+            })
+            .setScrollFactor(0)
+            .setDepth(40)
+            .setVisible(false);
 
         // Initialize the dialogue manager
         this.dialogueManager = new DialogueManager(this);
@@ -62,18 +135,117 @@ export class Game extends Scene {
 
         // Autobattler Event Bridge Setup — launch dedicated BattleScene
         const handleBattleStart = (e: CustomEvent) => {
-            this.scene.start('BattleScene', {
+            console.log("[Game Scene] Received START_BATTLE event with detail:", e.detail);
+            const sceneConfig = {
                 p1Name: e.detail.agentAName || 'Player 1',
                 p2Name: e.detail.agentBName || 'Player 2',
-                p1Atlas: 'sophia',
-                p2Atlas: 'aristotle',
+                p1Atlas: e.detail.p1Atlas || this.playerAtlas,
+                p2Atlas: e.detail.p2Atlas || 'aristotle',
                 ...e.detail
-            });
+            };
+            console.log("[Game Scene] Attempting scene.start('BattleScene') with config:", sceneConfig);
+            try {
+                this.scene.start('BattleScene', sceneConfig);
+                console.log("[Game Scene] Scene.start succeeded");
+            } catch (err) {
+                console.error("[Game Scene] scene.start() failed:", err);
+            }
         };
-        window.addEventListener('START_BATTLE', handleBattleStart as EventListener);
+
+        const handleChallengeStatus = (e: CustomEvent) => {
+            const phase = e.detail?.phase;
+            const npcName = e.detail?.npcName || 'Opponent';
+
+            if (phase === 'engage') {
+                this.challengeOverlayLocked = true;
+                this.startChallengeOverlay([
+                    `⚔ ${npcName}: "You dare challenge me?"`,
+                    `😈 ${npcName}: "Step forward, warrior."`,
+                    `💢 ${npcName}: "No retreat now."`,
+                ]);
+                return;
+            }
+
+            if (phase === 'wallet') {
+                this.challengeOverlayLocked = true;
+                this.startChallengeOverlay([
+                    '🦊 Opening wallet portal...',
+                    '🧾 Prepare your signature...',
+                    `🔥 ${npcName} is waiting for your confirmation...`,
+                ]);
+                return;
+            }
+
+            if (phase === 'submitted' || phase === 'mining') {
+                this.challengeOverlayLocked = true;
+                this.startChallengeOverlay([
+                    '⛓ Transaction submitted...',
+                    '⚙ Validating battle state on-chain...',
+                    '🧊 Block confirmation in progress...',
+                    `💥 ${npcName}: "Tick tock, warrior."`,
+                ]);
+                return;
+            }
+
+            if (phase === 'success') {
+                this.stopChallengeOverlay();
+                this.challengeOverlayLocked = false;
+                this.interactionHint.setText(`✅ Challenge confirmed. Entering battle against ${npcName}...`);
+                this.interactionHint.setVisible(true);
+                this.time.delayedCall(1400, () => {
+                    if (!this.challengeOverlayLocked) this.interactionHint.setVisible(false);
+                });
+                return;
+            }
+
+            if (phase === 'error') {
+                this.stopChallengeOverlay();
+                this.challengeOverlayLocked = false;
+                const msg = e.detail?.message ? String(e.detail.message).slice(0, 90) : 'Challenge cancelled or failed.';
+                this.interactionHint.setText(`❌ ${msg}`);
+                this.interactionHint.setVisible(true);
+                this.time.delayedCall(2200, () => {
+                    if (!this.challengeOverlayLocked) this.interactionHint.setVisible(false);
+                });
+            }
+        };
+
+        console.log('[Game Scene] Registering START_BATTLE_SCENE and CHALLENGE_STATUS listeners');
+        window.addEventListener('START_BATTLE_SCENE', handleBattleStart as EventListener);
+        window.addEventListener('CHALLENGE_STATUS', handleChallengeStatus as EventListener);
         this.events.on(Phaser.Scenes.Events.DESTROY, () => {
-            window.removeEventListener('START_BATTLE', handleBattleStart as EventListener);
+            console.log('[Game Scene] Unregistering listeners due to scene destroy');
+            window.removeEventListener('START_BATTLE_SCENE', handleBattleStart as EventListener);
+            window.removeEventListener('CHALLENGE_STATUS', handleChallengeStatus as EventListener);
+            this.stopChallengeOverlay();
         });
+    }
+
+    startChallengeOverlay(messages: string[]) {
+        this.stopChallengeOverlay();
+        this.challengeOverlayMessages = messages;
+        this.challengeOverlayIndex = 0;
+
+        this.interactionHint.setText(messages[0]);
+        this.interactionHint.setVisible(true);
+
+        this.challengeOverlayTimer = this.time.addEvent({
+            delay: 700,
+            loop: true,
+            callback: () => {
+                if (!this.challengeOverlayMessages.length) return;
+                this.challengeOverlayIndex = (this.challengeOverlayIndex + 1) % this.challengeOverlayMessages.length;
+                this.interactionHint.setText(this.challengeOverlayMessages[this.challengeOverlayIndex]);
+            },
+        });
+    }
+
+    stopChallengeOverlay() {
+        if (this.challengeOverlayTimer) {
+            this.challengeOverlayTimer.remove();
+            this.challengeOverlayTimer = null;
+        }
+        this.challengeOverlayMessages = [];
     }
 
     spawnFighters(data: any) {
@@ -226,7 +398,16 @@ export class Game extends Scene {
         const philosopherConfigs = [
             { id: "socrates", name: "Socrates", defaultDirection: "right", roamRadius: 800, defaultMessage: "I know that I know nothing." },
             { id: "aristotle", name: "Aristotle", defaultDirection: "right", roamRadius: 700, defaultMessage: "We are what we repeatedly do. Excellence, then, is not an act, but a habit." },
-            { id: "plato", name: "Plato", defaultDirection: "front", roamRadius: 750, defaultMessage: "Love is a serious mental disease." }
+            { id: "plato", name: "Plato", defaultDirection: "front", roamRadius: 750, defaultMessage: "Love is a serious mental disease." },
+            { id: "ada", name: "Ada", defaultDirection: "left", roamRadius: 680, defaultMessage: "Imagination powers invention." },
+            { id: "turing", name: "Turing", defaultDirection: "right", roamRadius: 700, defaultMessage: "Sometimes it is the people no one can imagine anything of who do the things no one can imagine." },
+            { id: "descartes", name: "Descartes", defaultDirection: "back", roamRadius: 620, defaultMessage: "I think, therefore I am." },
+            { id: "leibniz", name: "Leibniz", defaultDirection: "left", roamRadius: 640, defaultMessage: "Music is hidden arithmetic of the soul." },
+            { id: "searle", name: "Searle", defaultDirection: "front", roamRadius: 600, defaultMessage: "Minds are not just programs." },
+            { id: "chomsky", name: "Chomsky", defaultDirection: "right", roamRadius: 610, defaultMessage: "Colorless green ideas sleep furiously." },
+            { id: "dennett", name: "Dennett", defaultDirection: "left", roamRadius: 620, defaultMessage: "There is no such thing as philosophy-free science." },
+            { id: "paul", name: "Paul", defaultDirection: "front", roamRadius: 590, defaultMessage: "Consistency and patience beat noise." },
+            { id: "miguel", name: "Miguel", defaultDirection: "right", roamRadius: 580, defaultMessage: "Courage means moving before certainty." },
         ];
 
         this.philosophers = [];
@@ -277,6 +458,11 @@ export class Game extends Scene {
         }
 
         if (nearbyPhilosopher) {
+            if (!this.dialogueBox.isVisible() && !this.challengeOverlayLocked) {
+                this.interactionHint.setText(`Near ${nearbyPhilosopher.name} | SPACE: Talk | C: Challenge`);
+                this.interactionHint.setVisible(true);
+            }
+
             if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
                 if (!this.dialogueBox.isVisible()) {
                     this.dialogueManager.startDialogue(nearbyPhilosopher);
@@ -285,11 +471,25 @@ export class Game extends Scene {
                 }
             }
 
+            if (Phaser.Input.Keyboard.JustDown(this.challengeKey) && !this.dialogueBox.isVisible() && !this.challengeOverlayLocked) {
+                window.dispatchEvent(new CustomEvent('CHALLENGE_NPC', {
+                    detail: {
+                        agentBName: nearbyPhilosopher.name,
+                        p2Atlas: nearbyPhilosopher.id,
+                    }
+                }));
+                this.interactionHint.setText(`Challenging ${nearbyPhilosopher.name}...`);
+                this.interactionHint.setVisible(true);
+            }
+
             if (this.dialogueBox.isVisible()) {
                 nearbyPhilosopher.facePlayer(this.player!);
             }
         } else if (this.dialogueBox.isVisible()) {
             this.dialogueManager.closeDialogue();
+            if (!this.challengeOverlayLocked) this.interactionHint.setVisible(false);
+        } else {
+            if (!this.challengeOverlayLocked) this.interactionHint.setVisible(false);
         }
     }
 
@@ -320,7 +520,13 @@ export class Game extends Scene {
             spawnPoint = { x: 400, y: 400 } as any;
         }
 
-        this.player = this.physics.add.sprite(spawnPoint!.x!, spawnPoint!.y!, "sophia", "sophia-front")
+        const startFrame = this.safePlayerFrame('front');
+        this.player = this.physics.add.sprite(
+            spawnPoint!.x!,
+            spawnPoint!.y!,
+            startFrame.atlas,
+            startFrame.frame
+        )
             .setSize(30, 40)
             .setOffset(0, 6);
 
@@ -339,21 +545,67 @@ export class Game extends Scene {
 
     createPlayerAnimations() {
         const anims = this.anims;
+        this.playerAtlas = this.resolvePlayerAtlas(this.playerAtlas);
+        const playerTexture = this.textures.get(this.playerAtlas);
+        const sophiaTexture = this.textures.get('sophia');
+
         const animConfig = [
-            { key: "sophia-left-walk", prefix: "sophia-left-walk-" },
-            { key: "sophia-right-walk", prefix: "sophia-right-walk-" },
-            { key: "sophia-front-walk", prefix: "sophia-front-walk-" },
-            { key: "sophia-back-walk", prefix: "sophia-back-walk-" }
+            { key: `${this.playerAtlas}-left-walk`, prefix: `${this.playerAtlas}-left-walk-` },
+            { key: `${this.playerAtlas}-right-walk`, prefix: `${this.playerAtlas}-right-walk-` },
+            { key: `${this.playerAtlas}-front-walk`, prefix: `${this.playerAtlas}-front-walk-` },
+            { key: `${this.playerAtlas}-back-walk`, prefix: `${this.playerAtlas}-back-walk-` }
         ];
 
         animConfig.forEach(config => {
-            anims.create({
-                key: config.key,
-                frames: anims.generateFrameNames("sophia", { prefix: config.prefix, start: 0, end: 8, zeroPad: 4 }),
-                frameRate: 10,
-                repeat: -1,
-            });
+            if (!anims.exists(config.key)) {
+                const frameNames = Array.from({ length: 9 }, (_, i) => `${config.prefix}${i.toString().padStart(4, '0')}`)
+                    .filter((name) => !!playerTexture && playerTexture.has(name));
+
+                if (frameNames.length < 2) {
+                    return;
+                }
+
+                anims.create({
+                    key: config.key,
+                    frames: frameNames.map((frame) => ({ key: this.playerAtlas, frame })),
+                    frameRate: 10,
+                    repeat: -1,
+                });
+            }
         });
+
+        // Ensure fallback sophia walks always exist for mismatched recruited atlas frame names.
+        const sophiaFallbackConfig = [
+            { key: 'sophia-left-walk', prefix: 'sophia-left-walk-' },
+            { key: 'sophia-right-walk', prefix: 'sophia-right-walk-' },
+            { key: 'sophia-front-walk', prefix: 'sophia-front-walk-' },
+            { key: 'sophia-back-walk', prefix: 'sophia-back-walk-' },
+        ];
+
+        sophiaFallbackConfig.forEach((config) => {
+            if (!anims.exists(config.key)) {
+                const frameNames = Array.from({ length: 9 }, (_, i) => `${config.prefix}${i.toString().padStart(4, '0')}`)
+                    .filter((name) => !!sophiaTexture && sophiaTexture.has(name));
+
+                if (frameNames.length < 2) {
+                    return;
+                }
+
+                anims.create({
+                    key: config.key,
+                    frames: frameNames.map((frame) => ({ key: 'sophia', frame })),
+                    frameRate: 10,
+                    repeat: -1,
+                });
+            }
+        });
+
+        this.playerWalkAnimByDirection = {
+            left: this.resolveWalkAnimation('left'),
+            right: this.resolveWalkAnimation('right'),
+            front: this.resolveWalkAnimation('front'),
+            back: this.resolveWalkAnimation('back'),
+        };
     }
 
     setupCamera(map: Phaser.Tilemaps.Tilemap) {
@@ -451,19 +703,48 @@ export class Game extends Scene {
         const isMoving = Math.abs(currentVelocity.x) > 0 || Math.abs(currentVelocity.y) > 0;
 
         if (leftDown && isMoving) {
-            this.player!.anims.play("sophia-left-walk", true);
+            this.playPlayerWalk('left');
         } else if (rightDown && isMoving) {
-            this.player!.anims.play("sophia-right-walk", true);
+            this.playPlayerWalk('right');
         } else if (upDown && isMoving) {
-            this.player!.anims.play("sophia-back-walk", true);
+            this.playPlayerWalk('back');
         } else if (downDown && isMoving) {
-            this.player!.anims.play("sophia-front-walk", true);
+            this.playPlayerWalk('front');
         } else {
             this.player!.anims.stop();
-            if (prevVelocity.x < 0) this.player!.setTexture("sophia", "sophia-left");
-            else if (prevVelocity.x > 0) this.player!.setTexture("sophia", "sophia-right");
-            else if (prevVelocity.y < 0) this.player!.setTexture("sophia", "sophia-back");
-            else if (prevVelocity.y > 0) this.player!.setTexture("sophia", "sophia-front");
+
+            if (leftDown) {
+                const frame = this.safePlayerFrame('left');
+                this.player!.setTexture(frame.atlas, frame.frame);
+            }
+            else if (rightDown) {
+                const frame = this.safePlayerFrame('right');
+                this.player!.setTexture(frame.atlas, frame.frame);
+            }
+            else if (upDown) {
+                const frame = this.safePlayerFrame('back');
+                this.player!.setTexture(frame.atlas, frame.frame);
+            }
+            else if (downDown) {
+                const frame = this.safePlayerFrame('front');
+                this.player!.setTexture(frame.atlas, frame.frame);
+            }
+            else if (prevVelocity.x < 0) {
+                const frame = this.safePlayerFrame('left');
+                this.player!.setTexture(frame.atlas, frame.frame);
+            }
+            else if (prevVelocity.x > 0) {
+                const frame = this.safePlayerFrame('right');
+                this.player!.setTexture(frame.atlas, frame.frame);
+            }
+            else if (prevVelocity.y < 0) {
+                const frame = this.safePlayerFrame('back');
+                this.player!.setTexture(frame.atlas, frame.frame);
+            }
+            else if (prevVelocity.y > 0) {
+                const frame = this.safePlayerFrame('front');
+                this.player!.setTexture(frame.atlas, frame.frame);
+            }
             else {
                 // If prevVelocity is zero, maintain current direction
                 const currentFrame = this.player!.frame.name;
@@ -475,7 +756,8 @@ export class Game extends Scene {
                 else if (currentFrame.includes("back")) direction = "back";
                 else if (currentFrame.includes("front")) direction = "front";
 
-                this.player!.setTexture("sophia", `sophia-${direction}`);
+                const frame = this.safePlayerFrame(direction as 'left' | 'right' | 'front' | 'back');
+                this.player!.setTexture(frame.atlas, frame.frame);
             }
         }
     }

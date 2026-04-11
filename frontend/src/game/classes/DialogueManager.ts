@@ -75,8 +75,68 @@ export default class DialogueManager {
         }
     }
 
+    // Track conversation context per NPC
+    chatHistory: { role: string; content: string }[] = [];
+    annoyanceLevel = 0;
+
     async handleDefaultMessage() {
-        const apiResponse = this.activePhilosopher?.defaultMessage || "I know that I know nothing.";
+        const npcId = this.activePhilosopher?.id || 'socrates';
+        const userMsg = this.currentMessage.trim() || 'Hello';
+
+        // Track annoyance — rude/aggressive messages raise it
+        const rudePatterns = /shut up|fight me|stupid|idiot|dumb|boring|lame|trash|weak/i;
+        if (rudePatterns.test(userMsg)) {
+            this.annoyanceLevel += 2;
+        } else {
+            this.annoyanceLevel = Math.max(0, this.annoyanceLevel - 0.5);
+        }
+
+        // If NPC is too annoyed, they challenge the player!
+        if (this.annoyanceLevel >= 5) {
+            this.annoyanceLevel = 0;
+            this.chatHistory = [];
+            const challengeMsg = `Enough! You have tested my patience. I challenge you to battle!`;
+            this.dialogueBox.show('', true);
+            await this.streamText(challengeMsg);
+
+            // Auto-trigger challenge after the text finishes streaming
+            this.scene.time.delayedCall(800, () => {
+                this.closeDialogue();
+                if (typeof window !== 'undefined' && this.activePhilosopher) {
+                    window.dispatchEvent(new CustomEvent('CHALLENGE_NPC', {
+                        detail: {
+                            agentBName: this.activePhilosopher.name,
+                            p2Atlas: this.activePhilosopher.id,
+                        }
+                    }));
+                }
+            });
+            return;
+        }
+
+        // Add user message to history
+        this.chatHistory.push({ role: 'user', content: userMsg });
+
+        let apiResponse: string;
+        try {
+            const res = await fetch('/api/npc/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    npcId,
+                    message: userMsg,
+                    history: this.chatHistory.slice(-6),
+                }),
+            });
+            const data = await res.json();
+            apiResponse = data.reply || this.activePhilosopher?.defaultMessage || 'I know that I know nothing.';
+        } catch {
+            apiResponse = this.activePhilosopher?.defaultMessage || 'I know that I know nothing.';
+        }
+
+        // Add assistant response to history
+        this.chatHistory.push({ role: 'assistant', content: apiResponse });
+
         this.dialogueBox.show('', true);
         await this.streamText(apiResponse);
     }
@@ -118,6 +178,11 @@ export default class DialogueManager {
     }
 
     startDialogue(philosopher: Character) {
+        // Reset history when switching to a different NPC
+        if (this.activePhilosopher !== philosopher) {
+            this.chatHistory = [];
+            this.annoyanceLevel = 0;
+        }
         this.activePhilosopher = philosopher;
         this.isTyping = true;
         this.currentMessage = '';

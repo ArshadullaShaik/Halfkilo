@@ -2105,6 +2105,131 @@ h3 {
   }
 }
 
+/* ═══════════════════════
+   INVENTORY VISUAL LOOT
+   ═══════════════════════ */
+.inventory-v2-loot-hero--alive {
+  position: relative;
+  overflow: hidden;
+}
+
+.inventory-v2-loot-hero--alive::before,
+.inventory-v2-loot-hero--alive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.inventory-v2-loot-hero--alive::before {
+  background:
+    radial-gradient(circle at 16% 22%, rgba(255, 255, 255, 0.18), transparent 10%),
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.1), transparent 8%),
+    radial-gradient(circle at 68% 68%, rgba(255, 255, 255, 0.12), transparent 9%),
+    radial-gradient(circle at 35% 72%, rgba(255, 255, 255, 0.08), transparent 7%);
+  mix-blend-mode: screen;
+  animation: loot-sparkle 5s linear infinite;
+}
+
+.inventory-v2-loot-hero--alive::after {
+  background:
+    linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.09) 48%, transparent 58%),
+    linear-gradient(235deg, transparent 0%, rgba(78, 240, 208, 0.08) 50%, transparent 60%);
+  opacity: 0.55;
+  animation: loot-sheen 7s ease-in-out infinite;
+}
+
+.inventory-v2-loot-orb--pulse {
+  position: relative;
+  isolation: isolate;
+  animation: loot-pulse 2.6s ease-in-out infinite;
+}
+
+.inventory-v2-orb-ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 999px;
+  border: 1px solid rgba(78, 240, 208, 0.34);
+  box-shadow: 0 0 18px rgba(78, 240, 208, 0.1);
+  animation: loot-ring 3.8s linear infinite;
+}
+
+.inventory-v2-orb-ring--alt {
+  inset: -14px;
+  border-color: rgba(251, 191, 36, 0.3);
+  animation-duration: 5.1s;
+  animation-direction: reverse;
+}
+
+.inventory-v2-tip-gem {
+  color: #fbbf24;
+  text-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
+  animation: loot-gem-flicker 1.9s ease-in-out infinite;
+}
+
+.inventory-v2-loot-note {
+  font-family: "Press Start 2P", cursive;
+  font-size: 7px;
+  color: #d7f1ff;
+  letter-spacing: 0.6px;
+}
+
+.inventory-v2-loot-note::before {
+  content: "◆ ";
+  color: #fbbf24;
+}
+
+@keyframes loot-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 10px rgba(78, 240, 208, 0.18));
+  }
+  50% {
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 18px rgba(78, 240, 208, 0.32));
+  }
+}
+
+@keyframes loot-ring {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loot-sparkle {
+  0%, 100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes loot-sheen {
+  0%, 100% {
+    transform: translateX(-10%);
+  }
+  50% {
+    transform: translateX(10%);
+  }
+}
+
+@keyframes loot-gem-flicker {
+  0%, 100% {
+    opacity: 0.85;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

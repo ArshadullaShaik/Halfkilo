@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAccount, useReadContract } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { CONTRACTS } from "@/config/contracts";
@@ -11,11 +11,18 @@ const PERSONALITIES = ["CALM", "AGGRESSIVE", "PLAYFUL", "SHY"];
 const RARITIES = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"];
 const RARITY_CLASSES = ["rarity-common", "rarity-uncommon", "rarity-rare", "rarity-epic", "rarity-legendary"];
 
+const SCAN_TIPS = [
+    "Use the agent index to inspect your current recruit and linked TBA.",
+    "Use the loot index to inspect battle drops and rarity tiers.",
+    "Higher rarity loot carries a stronger visual signature on this screen.",
+];
+
 export default function InventoryPage() {
-    const { isConnected } = useAccount();
+    const { isConnected, address } = useAccount();
     const [agentId, setAgentId] = useState("1");
     const [petId, setPetId] = useState("1");
     const [itemId, setItemId] = useState("1");
+    const [lastBattleLootId, setLastBattleLootId] = useState<string | null>(null);
 
     const { data: agentData, isError: agentError, isFetching: agentFetching } = useReadContract({
         address: CONTRACTS.agentNFT, abi: AgentNFTABI, functionName: "getAgent",
@@ -32,10 +39,29 @@ export default function InventoryPage() {
         args: [BigInt(itemId || "0")], query: { enabled: !!itemId && !!CONTRACTS.itemNFT },
     });
 
+    const itemRarityIndex = itemData ? Number(itemData[2]) : 0;
+    const itemRarityLabel = RARITIES[itemRarityIndex] || "UNKNOWN";
+    const itemRarityClass = RARITY_CLASSES[itemRarityIndex] || "rarity-common";
+    const itemPower = itemData ? itemData[1].toString() : "0";
+    const itemName = itemData ? itemData[0].toString() : "UNSCANNED LOOT";
+
     const { data: tbaAddress } = useReadContract({
         address: CONTRACTS.tbaRegistry, abi: TBARegistryABI, functionName: "getAccount",
         args: [CONTRACTS.agentNFT, BigInt(agentId || "0")], query: { enabled: !!agentId && !!CONTRACTS.tbaRegistry },
     });
+
+    const agentResolved = Boolean(agentData) && !agentError && !agentFetching;
+
+    useEffect(() => {
+        if (!address || typeof window === "undefined") return;
+
+        const savedLootId = window.localStorage.getItem(`lastBattleLootId:${address.toLowerCase()}`);
+        setLastBattleLootId(savedLootId);
+        if (savedLootId) setItemId(savedLootId);
+    }, [address]);
+
+    const selectedLootId = lastBattleLootId || itemId;
+    const showingLastBattleLoot = Boolean(lastBattleLootId && String(lastBattleLootId) === String(itemId));
 
     if (!isConnected) {
         return (
@@ -49,87 +75,178 @@ export default function InventoryPage() {
     }
 
     return (
-        <div className="page-container">
-            <h1 style={{ fontSize: 14, color: "var(--accent)", marginBottom: 6 }}>INVENTORY</h1>
-            <p style={{ color: "var(--text-dim)", marginBottom: 20, fontSize: 16 }}>
-                &gt; Inspect agents and your loot
-            </p>
+        <div className="page-container inventory-v2-screen">
+            <section className="pixel-panel inventory-v2-shell">
+                <header className="inventory-v2-header">
+                    <div>
+                        <p className="inventory-v2-kicker">HALFKILO STORAGE VAULT</p>
+                        <h1 className="inventory-v2-title">LOOT ARCHIVE</h1>
+                    </div>
+                    <p className="inventory-v2-subtitle">
+                        Inspect your active recruit, trace reputation, and surface reward drops with a more cinematic scan deck.
+                    </p>
+                </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl">
-                {/* Agent */}
-                <div className="pixel-panel">
-                    <h2 style={{ fontSize: 9, color: "var(--accent-warm)", marginBottom: 12 }}>🤖 AGENT</h2>
-                    <input className="pixel-input" type="number" min="1" placeholder="AGENT ID" value={agentId} onChange={(e) => setAgentId(e.target.value)} style={{ marginBottom: 12 }} />
+                <div className="inventory-v2-stats-grid">
+                    <div className="inventory-v2-metric">
+                        <span>AGENT SCAN</span>
+                        <strong>{agentId}</strong>
+                    </div>
+                    <div className="inventory-v2-metric">
+                        <span>LOOT SCAN</span>
+                        <strong>{itemId}</strong>
+                    </div>
+                    <div className="inventory-v2-metric">
+                        <span>STATUS</span>
+                        <strong>{agentData ? "ONLINE" : "SYNCING"}</strong>
+                    </div>
+                </div>
 
-                    {agentFetching ? (
-                        <p style={{ color: "var(--text-dim)", fontSize: 14 }}>&gt; Scanning...</p>
-                    ) : agentError ? (
-                        <p style={{ color: "var(--accent-red)", fontSize: 14 }}>&gt; Agent Not Found</p>
-                    ) : agentData ? (
-                        <div className="pixel-panel-inset" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className="inventory-v2-grid">
+                    <section className="pixel-panel inventory-v2-card inventory-v2-agent-card">
+                        <div className="inventory-v2-card-head">
                             <div>
-                                <span style={{ fontFamily: "'Press Start 2P', cursive", fontSize: 7, color: "var(--text-dim)" }}>NAME</span>
-                                <p style={{ color: "var(--text-bright)", fontWeight: "bold" }}>{agentData[0]}</p>
+                                <p className="avatar-label">AGENT</p>
+                                <h2>RECRUITED PROFILE</h2>
                             </div>
-                            <div>
-                                <span style={{ fontFamily: "'Press Start 2P', cursive", fontSize: 7, color: "var(--text-dim)" }}>LEVEL</span>
-                                <p style={{ color: "var(--accent-warm)" }}>Level {agentData[1].toString()}</p>
-                            </div>
-                            {repData && (
-                                <>
-                                    <div className="flex gap-2">
-                                        <span className="rarity-badge rarity-uncommon">W:{repData[0].toString()}</span>
-                                        <span className="rarity-badge rarity-common">L:{repData[1].toString()}</span>
-                                    </div>
+                            <span className="inventory-v2-chip">LIVE INDEX</span>
+                        </div>
+
+                        <input
+                            className="pixel-input"
+                            type="number"
+                            min="1"
+                            placeholder="AGENT ID"
+                            value={agentId}
+                            onChange={(e) => setAgentId(e.target.value)}
+                        />
+
+                        {agentFetching ? (
+                            <div className="inventory-v2-empty">&gt; Scanning agent record...</div>
+                        ) : agentError ? (
+                            <div className="inventory-v2-empty inventory-v2-empty--error">&gt; Agent Not Found</div>
+                        ) : agentData ? (
+                            <div className="inventory-v2-profile">
+                                <div className="inventory-v2-profile-top">
                                     <div>
-                                        <span style={{ fontFamily: "'Press Start 2P', cursive", fontSize: 7, color: "var(--text-dim)" }}>RATING</span>
-                                        <div className="gauge-value" style={{ fontSize: 20 }}>{repData[2].toString()}</div>
+                                        <span className="inventory-v2-label">NAME</span>
+                                        <p className="inventory-v2-value">{agentData[0]}</p>
                                     </div>
-                                </>
-                            )}
-                            {tbaAddress && tbaAddress !== "0x0000000000000000000000000000000000000000" && (
-                                <div>
-                                    <span style={{ fontFamily: "'Press Start 2P', cursive", fontSize: 7, color: "var(--text-dim)" }}>TBA WALLET</span>
-                                    <p style={{ fontSize: 11, color: "var(--accent-dim)", fontFamily: "monospace", wordBreak: "break-all" }}>{tbaAddress}</p>
+                                    <div className="inventory-v2-badge-stack">
+                                        <span className="rarity-badge rarity-uncommon">LV {agentData[1].toString()}</span>
+                                        {repData && <span className="rarity-badge rarity-common">RATING {repData[2].toString()}</span>}
+                                    </div>
                                 </div>
-                            )}
-                        </div>
-                    ) : (
-                        <p style={{ color: "var(--text-dim)", fontSize: 14 }}>&gt; Enter ID to scan</p>
-                    )}
-                </div>
 
-                {/* Item */}
-                <div className="pixel-panel">
-                    <h2 style={{ fontSize: 9, color: "var(--accent-warm)", marginBottom: 12 }}>💎 LOOT</h2>
-                    <input className="pixel-input" type="number" min="1" placeholder="ITEM ID" value={itemId} onChange={(e) => setItemId(e.target.value)} style={{ marginBottom: 12 }} />
+                                <div className="inventory-v2-profile-grid">
+                                    <div className="inventory-v2-stat-tile">
+                                        <span>WINS</span>
+                                        <strong>{repData ? repData[0].toString() : "0"}</strong>
+                                    </div>
+                                    <div className="inventory-v2-stat-tile">
+                                        <span>LOSSES</span>
+                                        <strong>{repData ? repData[1].toString() : "0"}</strong>
+                                    </div>
+                                    <div className="inventory-v2-stat-tile inventory-v2-stat-tile--wide">
+                                        <span>TBA WALLET</span>
+                                        <strong>{tbaAddress && tbaAddress !== "0x0000000000000000000000000000000000000000" ? "LINKED" : "UNBOUND"}</strong>
+                                    </div>
+                                </div>
 
-                    {itemFetching ? (
-                        <p style={{ color: "var(--text-dim)", fontSize: 14 }}>&gt; Scanning...</p>
-                    ) : itemError ? (
-                        <p style={{ color: "var(--accent-red)", fontSize: 14 }}>&gt; Loot Not Found</p>
-                    ) : itemData ? (
-                        <div className="pixel-panel-inset" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                            <div>
-                                <span style={{ fontFamily: "'Press Start 2P', cursive", fontSize: 7, color: "var(--text-dim)" }}>NAME</span>
-                                <p style={{ color: "var(--text-bright)", fontWeight: "bold" }}>{itemData[0]}</p>
+                                <div className="inventory-v2-addr-box">
+                                    <span className="inventory-v2-label">TBA ADDRESS</span>
+                                    <p>{tbaAddress && tbaAddress !== "0x0000000000000000000000000000000000000000" ? tbaAddress : "No token-bound wallet detected for this agent."}</p>
+                                </div>
                             </div>
+                        ) : (
+                            <div className="inventory-v2-empty">&gt; Enter an agent ID to begin the scan.</div>
+                        )}
+                    </section>
+
+                    <section className="pixel-panel inventory-v2-card inventory-v2-loot-card">
+                        <div className="inventory-v2-card-head">
                             <div>
-                                <span style={{ fontFamily: "'Press Start 2P', cursive", fontSize: 7, color: "var(--text-dim)" }}>POWER</span>
-                                <div className="gauge-value" style={{ fontSize: 20, color: "var(--accent-warm)" }}>{itemData[1].toString()}</div>
+                                <p className="avatar-label">LOOT</p>
+                                <h2>BATTLE DROP</h2>
                             </div>
-                            <div>
-                                <span style={{ fontFamily: "'Press Start 2P', cursive", fontSize: 7, color: "var(--text-dim)" }}>RARITY</span>
-                                <span className={`rarity-badge ${RARITY_CLASSES[itemData[2]] || "rarity-common"}`}>
-                                    {RARITIES[itemData[2]] || "?"}
-                                </span>
-                            </div>
+                            <span className={`inventory-v2-chip ${itemRarityClass}`}>{itemRarityLabel}</span>
                         </div>
-                    ) : (
-                        <p style={{ color: "var(--text-dim)", fontSize: 14 }}>&gt; Enter ID to scan</p>
-                    )}
+
+                        {!agentResolved ? (
+                            <div className="inventory-v2-empty inventory-v2-empty--error">
+                                &gt; Loot archive locked until a valid agent is found.
+                            </div>
+                        ) : (
+                            <>
+                                <div className={`inventory-v2-loot-hero ${itemRarityClass} inventory-v2-loot-hero--alive`}>
+                                    <div className="inventory-v2-loot-orb inventory-v2-loot-orb--pulse">
+                                        <span>✦</span>
+                                        <i className="inventory-v2-orb-ring" />
+                                        <i className="inventory-v2-orb-ring inventory-v2-orb-ring--alt" />
+                                    </div>
+                                    <div className="inventory-v2-loot-copy">
+                                        <span className="inventory-v2-label">ITEM NAME</span>
+                                        <h3>{itemName}</h3>
+                                        <p>
+                                            {showingLastBattleLoot
+                                                ? "Recovered from your latest victory. The vault is showing the exact reward minted by your last battle."
+                                                : "Battle-grade artifact recovered from the arena vault. Scan the ID to reveal its power signature and rarity."}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <input
+                                    className="pixel-input"
+                                    type="number"
+                                    min="1"
+                                    placeholder="ITEM ID"
+                                    value={selectedLootId}
+                                    onChange={(e) => setItemId(e.target.value)}
+                                />
+
+                                {itemFetching ? (
+                                    <div className="inventory-v2-empty">&gt; Scanning loot archive...</div>
+                                ) : itemError ? (
+                                    <div className="inventory-v2-empty inventory-v2-empty--error">&gt; Loot Not Found</div>
+                                ) : itemData ? (
+                                    <div className="inventory-v2-loot-panel-inset pixel-panel-inset">
+                                        <div className="inventory-v2-profile-grid inventory-v2-profile-grid--loot">
+                                            <div className="inventory-v2-stat-tile inventory-v2-stat-tile--wide">
+                                                <span>POWER</span>
+                                                <strong className="inventory-v2-power">{itemPower}</strong>
+                                            </div>
+                                            <div className="inventory-v2-stat-tile">
+                                                <span>RARITY</span>
+                                                <strong>{itemRarityLabel}</strong>
+                                            </div>
+                                            <div className="inventory-v2-stat-tile">
+                                                <span>SIGNATURE</span>
+                                                <strong>ENCRYPTED</strong>
+                                            </div>
+                                        </div>
+
+                                        <div className="inventory-v2-tip-list">
+                                            {SCAN_TIPS.map((tip) => (
+                                                <div key={tip} className="inventory-v2-tip-row">
+                                                    <span className="inventory-v2-tip-gem">◆</span>
+                                                    <p>{tip}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="inventory-v2-rarity-bar">
+                                            <span className={`rarity-badge ${itemRarityClass}`}>{itemRarityLabel}</span>
+                                            <span className="inventory-v2-loot-note">{showingLastBattleLoot ? "LAST BATTLE DROP" : "DROP POWER"} {itemPower}</span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="inventory-v2-empty">&gt; Enter an item ID to begin the scan.</div>
+                                )}
+                            </>
+                        )}
+                    </section>
                 </div>
-            </div>
+            </section>
         </div>
     );
 }
